@@ -7,10 +7,16 @@ fn fill_bits(start: usize, end: usize, slice: &mut [u32]) {
     // Partial fill at start
 
     let start_idx = start / bits_per_item;
+    let start_shift = start % bits_per_item;
     // Number of bits in partial fill
-    let start_bits = bits_per_item - (start % bits_per_item);
+    let start_bits = (bits_per_item - start_shift).wrapping_sub(1);
 
     dbg!(start_bits);
+
+    let start_mask = (2u32 << start_bits).wrapping_sub(1);
+    let start_mask = start_mask << start_shift;
+
+    println!("Start: {:032b}", start_mask);
 
     // Full fill in middle
 
@@ -37,9 +43,7 @@ mod tests {
     fn full() {
         let mut input = [0u32; 4];
 
-        dbg!(33 % 32);
-
         // fill_bits(0, 32, &mut input);
-        fill_bits(1, 2, &mut input);
+        fill_bits(0, 33, &mut input);
     }
 }
