@@ -33,7 +33,7 @@ fn start_chunk(buf: &mut [Chunk], start: u32, end: u32) -> (u32, usize) {
 
     buf[start_idx] = shifted;
 
-    (remaining, start_idx + 1)
+    (remaining, start_idx)
 }
 
 /// Returns section of buffer that was actually modified
@@ -41,8 +41,10 @@ pub fn build_mask(buf: &mut [Chunk], start: u32, end: u32) -> (usize, &[Chunk]) 
     let (remaining, fill_start_idx) = start_chunk(buf, start, end);
 
     if remaining == 0 {
-        return (fill_start_idx - 1, &buf[fill_start_idx..=fill_start_idx]);
+        return (fill_start_idx, &buf[fill_start_idx..=fill_start_idx]);
     }
+
+    let fill_start_idx = fill_start_idx + 1;
 
     // Fully fill chunks
     let (remaining, mut final_idx) = {
