@@ -4,7 +4,8 @@
 use embedded_graphics_core::{pixelcolor::BinaryColor, primitives::Rectangle};
 use mask::build_mask;
 
-mod mask;
+// FIXME: Public for benchmark only
+pub mod mask;
 
 pub fn fill_rect(buf: &mut [u8], rect: &Rectangle, color: BinaryColor) {
     // TODO: Intersect rect with display so coords are always positive, or do that somewhere else

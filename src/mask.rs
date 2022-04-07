@@ -2,7 +2,7 @@ type Chunk = u8;
 type ShiftSource = i8;
 
 /// Returns (remaining number of bits to pack, next index)
-fn start_chunk(buf: &mut [Chunk], start: u32, end: u32) -> (u32, usize) {
+pub fn start_chunk(buf: &mut [Chunk], start: u32, end: u32) -> (u32, usize) {
     let len = end - start;
     let num_bits = Chunk::BITS;
 
