@@ -28,6 +28,7 @@ fn start_chunk(buf: &mut [Chunk], start: u32, end: u32) -> (u32, usize) {
 
     let remaining = len - num_set_bits;
 
+    // MSRV: Consider unsafe unchecked_shr when stabilised
     let shifted = ShiftSource::MIN >> num_set_bits;
     let shifted = (shifted as Chunk) >> shift_places;
 
@@ -59,6 +60,7 @@ pub fn build_mask(buf: &mut [Chunk], start: u32, end: u32) -> (usize, &[Chunk]) 
 
     // Partially fill end chunk if there are any remaining bits
     if remaining > 0 {
+        // MSRV: Consider unsafe unchecked_shl when stabilised
         buf[final_idx] = !(ShiftSource::MAX << remaining) as Chunk;
     } else {
         final_idx -= 1
