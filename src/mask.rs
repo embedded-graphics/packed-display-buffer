@@ -1,7 +1,15 @@
 pub type Chunk = u8;
 pub type ShiftSource = i8;
 
-pub(crate) fn start_chunk(start: u32, end: u32) -> (Chunk, u32) {
+pub(crate) struct StartChunk {
+    /// Generated bit mask.
+    pub mask: Chunk,
+
+    /// Bits remaining after those in the start chunk.
+    pub remaining: u32,
+}
+
+pub(crate) fn start_chunk(start: u32, end: u32) -> StartChunk {
     let len = end - start;
     let num_bits = Chunk::BITS;
 
@@ -31,5 +39,8 @@ pub(crate) fn start_chunk(start: u32, end: u32) -> (Chunk, u32) {
     let shifted = ShiftSource::MIN >> num_set_bits;
     let shifted = (shifted as Chunk) >> shift_places;
 
-    (shifted, remaining)
+    StartChunk {
+        mask: shifted,
+        remaining,
+    }
 }

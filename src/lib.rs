@@ -4,15 +4,15 @@
 use std::convert::Infallible;
 
 use embedded_graphics_core::{
+    draw_target::DrawTarget,
+    geometry::{Dimensions, OriginDimensions, Point, Size},
     pixelcolor::BinaryColor,
-    prelude::{Dimensions, DrawTarget, OriginDimensions, Point, Size},
     primitives::Rectangle,
     Pixel,
 };
-use mask::{Chunk, ShiftSource};
+use mask::{Chunk, ShiftSource, StartChunk};
 
-// FIXME: Public for benchmark only
-pub mod mask;
+mod mask;
 
 // TODO: Remove `N` and calculate from W * H when const features allow us to do so.
 #[derive(Debug, PartialEq)]
@@ -58,10 +58,11 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
 
     /// Fill a packed buffer with the given color in the given area.
     ///
-    /// The area must fit inside the buffer, i.e. no negative coordinates or coordinates too big to fit
-    /// into the (packed) buffer. Any out of bounds pixels will cause a panic.
+    /// The area is clipped to the display dimensions. In conjunction with the `W * H = N` assertion
+    /// in [`new`] guarantees that no out of bounds writes can occur.
     fn fill_rect(&mut self, rect: &Rectangle, color: BinaryColor) {
         let rect = rect.intersection(&self.area);
+
         let Size {
             width: display_width,
             ..
@@ -81,34 +82,38 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
         // X start coordinate
         let x_start = rect.top_left.x as usize;
 
-        let block_width = rect.size.width as usize;
+        let rect_width = rect.size.width as usize;
         let start_block = rect.top_left.y as usize / Chunk::BITS as usize;
 
         let color = if color.is_on() { 0xff } else { 0x00 };
 
-        let (first_mask, mut remaining) = mask::start_chunk(y_start, y_end);
+        let StartChunk {
+            mask: first_mask,
+            mut remaining,
+        } = mask::start_chunk(y_start, y_end);
 
-        let start_x = start_block * display_width as usize + x_start;
-        let end_x = start_x + block_width;
+        let start_x = start_block * display_width + x_start;
+        let end_x = start_x + rect_width;
 
-        // Partial fill; need to merge with existing data
+        // Partial fill at top of area; need to merge with existing data
         self.buf.get_mut(start_x..end_x).map(|chunk| {
             chunk
                 .iter_mut()
                 .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
         });
 
+        // If fill rectangle fits entirely within first block, there's nothing more to do
         if remaining == 0 {
             return;
         }
 
-        let num_fill = remaining / Chunk::BITS;
+        let num_fill = (remaining / Chunk::BITS) as usize;
 
-        // Completely fill some blocks. We don't need to do any bit twiddling here so it can be optimised
-        for i in 1usize..=num_fill as usize {
-            let start_x =
-                (start_block * display_width as usize) + (i * display_width as usize) + x_start;
-            let end_x = start_x + block_width;
+        // Completely fill middle blocks in the area. We don't need to do any bit twiddling here so
+        // it can be optimised by just filling the slice
+        for i in 1usize..=num_fill {
+            let start_x = (start_block * display_width) + (i * display_width) + x_start;
+            let end_x = start_x + rect_width;
 
             // Complete overwrite
             self.buf
@@ -118,17 +123,16 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
             remaining -= Chunk::BITS;
         }
 
-        let start_x = start_block * display_width as usize
-            + (num_fill as usize + 1) * display_width as usize
-            + x_start;
-        let end_x = start_x + block_width;
-
         // Partially fill end chunk if there are any remaining bits
         if remaining > 0 {
+            let start_x = start_block * display_width + (num_fill + 1) * display_width + x_start;
+            let end_x = start_x + rect_width;
+
             self.buf.get_mut(start_x..end_x).map(|chunk| {
                 chunk.iter_mut().for_each(|byte| {
                     let mask = !(ShiftSource::MAX << remaining) as Chunk;
 
+                    // Merge with existing data
                     *byte = (*byte & !mask) | (color & mask)
                 });
             });
@@ -179,7 +183,10 @@ impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<u8,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use embedded_graphics_core::prelude::{Point, PointsIter, Size};
+    use embedded_graphics_core::{
+        geometry::{Point, Size},
+        primitives::PointsIter,
+    };
     use rand::{thread_rng, Rng};
 
     fn random_point() -> Point {
