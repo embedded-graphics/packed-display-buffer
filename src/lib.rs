@@ -9,7 +9,7 @@ use embedded_graphics_core::{
     primitives::Rectangle,
     Pixel,
 };
-use mask::build_mask;
+use mask::{Chunk, ShiftSource};
 
 // FIXME: Public for benchmark only
 pub mod mask;
@@ -23,8 +23,9 @@ pub struct PackedBuffer<T, const W: u32, const H: u32, const N: usize> {
 
 impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
     pub const fn new() -> Self {
+        // FIXME: Remove this when we can do maths in const generics
         if N != (W * H / u8::BITS) as usize {
-            panic!()
+            panic!("Invariant error: W * H != N")
         }
 
         Self {
@@ -61,6 +62,12 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
     /// into the (packed) buffer. Any out of bounds pixels will cause a panic.
     fn fill_rect(&mut self, rect: &Rectangle, color: BinaryColor) {
         let rect = rect.intersection(&self.area);
+        let Size {
+            width: display_width,
+            ..
+        } = self.area.size;
+
+        let display_width = display_width as usize;
 
         let y_start = rect.top_left.y as u32;
 
@@ -71,27 +78,60 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
             return;
         } as u32;
 
-        let Size {
-            width: w,
-            height: h,
-        } = self.size();
+        // X start coordinate
+        let x_start = rect.top_left.x as usize;
+
+        let block_width = rect.size.width as usize;
+        let start_block = rect.top_left.y as usize / Chunk::BITS as usize;
 
         let color = if color.is_on() { 0xff } else { 0x00 };
 
-        let mut mask_buf = [0u8; 8];
+        let (first_mask, mut remaining) = mask::start_chunk(y_start, y_end);
 
-        let (chunk_start_idx, mask) = build_mask(&mut mask_buf, y_start, y_end);
+        let start_x = start_block * display_width as usize + x_start;
+        let end_x = start_x + block_width;
 
-        let start_x = rect.top_left.x as u32;
+        // Partial fill; need to merge with existing data
+        self.buf.get_mut(start_x..end_x).map(|chunk| {
+            chunk
+                .iter_mut()
+                .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
+        });
 
-        for x in start_x..(start_x + rect.size.width) {
-            for (chunk, mask) in mask.iter().enumerate() {
-                let offset = x as usize + ((chunk + chunk_start_idx) * W as usize);
+        if remaining == 0 {
+            return;
+        }
 
-                if let Some(byte) = self.buf.as_mut().get_mut(offset) {
+        let num_fill = remaining / Chunk::BITS;
+
+        // Completely fill some blocks. We don't need to do any bit twiddling here so it can be optimised
+        for i in 1usize..=num_fill as usize {
+            let start_x =
+                (start_block * display_width as usize) + (i * display_width as usize) + x_start;
+            let end_x = start_x + block_width;
+
+            // Complete overwrite
+            self.buf
+                .get_mut(start_x..end_x)
+                .map(|chunk| chunk.fill(Chunk::MAX));
+
+            remaining -= Chunk::BITS;
+        }
+
+        let start_x = start_block * display_width as usize
+            + (num_fill as usize + 1) * display_width as usize
+            + x_start;
+        let end_x = start_x + block_width;
+
+        // Partially fill end chunk if there are any remaining bits
+        if remaining > 0 {
+            self.buf.get_mut(start_x..end_x).map(|chunk| {
+                chunk.iter_mut().for_each(|byte| {
+                    let mask = !(ShiftSource::MAX << remaining) as Chunk;
+
                     *byte = (*byte & !mask) | (color & mask)
-                }
-            }
+                });
+            });
         }
     }
 }
@@ -174,6 +214,7 @@ mod tests {
             disp_fill.fill_solid(&area, BinaryColor::On);
 
             assert_eq!(disp_fill, disp_pixels, "{i}: {:?}", area);
+            // panic!();
         }
     }
 }
