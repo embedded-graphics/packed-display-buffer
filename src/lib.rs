@@ -96,13 +96,14 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
         let first_block_end_idx = first_block_start_idx + rect_width;
 
         // Partial fill at top of area; need to merge with existing data
-        self.buf
-            .get_mut(first_block_start_idx..first_block_end_idx)
-            .map(|chunk| {
-                chunk
-                    .iter_mut()
-                    .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
-            });
+        // SAFETY: Because the fill area is clipped to the display area, and the `W * H = N`
+        // assertion in `new`, this will not reach out of bounds.
+        unsafe {
+            self.buf
+                .get_unchecked_mut(first_block_start_idx..first_block_end_idx)
+        }
+        .iter_mut()
+        .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
 
         // If fill rectangle fits entirely within first block, there's nothing more to do
         if remaining == 0 {
@@ -121,9 +122,9 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
             let end_x = start_x + rect_width;
 
             // Complete overwrite
-            self.buf
-                .get_mut(start_x..end_x)
-                .map(|chunk| chunk.fill(Chunk::MAX));
+            // SAFETY: Because the fill area is clipped to the display area, and the `W * H = N`
+            // assertion in `new`, this will not reach out of bounds.
+            unsafe { self.buf.get_unchecked_mut(start_x..end_x) }.fill(Chunk::MAX);
 
             remaining -= Chunk::BITS;
         }
@@ -133,16 +134,19 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
             let final_block_start_idx = first_block_start_idx + (num_fill + 1) * display_width;
             let final_block_end_idx = final_block_start_idx + rect_width;
 
-            self.buf
-                .get_mut(final_block_start_idx..final_block_end_idx)
-                .map(|chunk| {
-                    chunk.iter_mut().for_each(|byte| {
-                        let mask = !(ShiftSource::MAX << remaining) as Chunk;
+            // SAFETY: Because the fill area is clipped to the display area, and the `W * H = N`
+            // assertion in `new`, this will not reach out of bounds.
+            unsafe {
+                self.buf
+                    .get_unchecked_mut(final_block_start_idx..final_block_end_idx)
+            }
+            .iter_mut()
+            .for_each(|byte| {
+                let mask = !(ShiftSource::MAX << remaining) as Chunk;
 
-                        // Merge with existing data
-                        *byte = (*byte & !mask) | (color & mask)
-                    });
-                });
+                // Merge with existing data
+                *byte = (*byte & !mask) | (color & mask)
+            });
         }
     }
 }
