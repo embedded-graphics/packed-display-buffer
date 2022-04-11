@@ -2,7 +2,7 @@ type Chunk = u8;
 type ShiftSource = i8;
 
 /// Returns (remaining number of bits to pack, next index)
-pub fn start_chunk(buf: &mut [Chunk], start: u32, end: u32) -> (u32, usize) {
+fn start_chunk(start: u32, end: u32) -> (Chunk, u32, usize) {
     let len = end - start;
     let num_bits = Chunk::BITS;
 
@@ -32,15 +32,14 @@ pub fn start_chunk(buf: &mut [Chunk], start: u32, end: u32) -> (u32, usize) {
     let shifted = ShiftSource::MIN >> num_set_bits;
     let shifted = (shifted as Chunk) >> shift_places;
 
-    // buf[start_idx] = shifted;
-    buf.get_mut(start_idx).map(|b| *b = shifted);
-
-    (remaining, start_idx)
+    (shifted, remaining, start_idx)
 }
 
 /// Returns section of buffer that was actually modified
 pub fn build_mask(buf: &mut [Chunk], start: u32, end: u32) -> (usize, &[Chunk]) {
-    let (remaining, fill_start_idx) = start_chunk(buf, start, end);
+    let (first, remaining, fill_start_idx) = start_chunk(start, end);
+
+    buf.get_mut(fill_start_idx).map(|b| *b = first);
 
     if remaining == 0 {
         return (fill_start_idx, &buf[fill_start_idx..=fill_start_idx]);
