@@ -92,27 +92,32 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
             mut remaining,
         } = mask::start_chunk(y_start, y_end);
 
-        let start_x = start_block * display_width + x_start;
-        let end_x = start_x + rect_width;
+        let first_block_start_idx = start_block * display_width + x_start;
+        let first_block_end_idx = first_block_start_idx + rect_width;
 
         // Partial fill at top of area; need to merge with existing data
-        self.buf.get_mut(start_x..end_x).map(|chunk| {
-            chunk
-                .iter_mut()
-                .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
-        });
+        self.buf
+            .get_mut(first_block_start_idx..first_block_end_idx)
+            .map(|chunk| {
+                chunk
+                    .iter_mut()
+                    .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
+            });
 
         // If fill rectangle fits entirely within first block, there's nothing more to do
         if remaining == 0 {
             return;
         }
 
+        // Number of full blocks to fill
         let num_fill = (remaining / Chunk::BITS) as usize;
+        // Block underneath start block
+        let fill_block_start_idx = first_block_start_idx + display_width;
+        let fill_block_end_idx = fill_block_start_idx + (num_fill * display_width);
 
         // Completely fill middle blocks in the area. We don't need to do any bit twiddling here so
         // it can be optimised by just filling the slice
-        for i in 1usize..=num_fill {
-            let start_x = (start_block * display_width) + (i * display_width) + x_start;
+        for start_x in (fill_block_start_idx..fill_block_end_idx).step_by(display_width) {
             let end_x = start_x + rect_width;
 
             // Complete overwrite
@@ -125,17 +130,19 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
 
         // Partially fill end chunk if there are any remaining bits
         if remaining > 0 {
-            let start_x = start_block * display_width + (num_fill + 1) * display_width + x_start;
-            let end_x = start_x + rect_width;
+            let final_block_start_idx = first_block_start_idx + (num_fill + 1) * display_width;
+            let final_block_end_idx = final_block_start_idx + rect_width;
 
-            self.buf.get_mut(start_x..end_x).map(|chunk| {
-                chunk.iter_mut().for_each(|byte| {
-                    let mask = !(ShiftSource::MAX << remaining) as Chunk;
+            self.buf
+                .get_mut(final_block_start_idx..final_block_end_idx)
+                .map(|chunk| {
+                    chunk.iter_mut().for_each(|byte| {
+                        let mask = !(ShiftSource::MAX << remaining) as Chunk;
 
-                    // Merge with existing data
-                    *byte = (*byte & !mask) | (color & mask)
+                        // Merge with existing data
+                        *byte = (*byte & !mask) | (color & mask)
+                    });
                 });
-            });
         }
     }
 }
@@ -221,7 +228,6 @@ mod tests {
             disp_fill.fill_solid(&area, BinaryColor::On);
 
             assert_eq!(disp_fill, disp_pixels, "{i}: {:?}", area);
-            // panic!();
         }
     }
 }
