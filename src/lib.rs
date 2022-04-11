@@ -1,47 +1,138 @@
 #![allow(dead_code)]
 #![allow(unused)]
 
-use embedded_graphics_core::{pixelcolor::BinaryColor, primitives::Rectangle};
+use std::convert::Infallible;
+
+use embedded_graphics_core::{
+    pixelcolor::BinaryColor,
+    prelude::{Dimensions, DrawTarget, OriginDimensions, Point, Size},
+    primitives::Rectangle,
+    Pixel,
+};
 use mask::build_mask;
 
 // FIXME: Public for benchmark only
 pub mod mask;
 
-pub fn fill_rect(buf: &mut [u8], rect: &Rectangle, color: BinaryColor) {
-    // TODO: Intersect rect with display so coords are always positive, or do that somewhere else
+// TODO: Remove `N` and calculate from W * H when const features allow us to do so.
+#[derive(Debug, PartialEq)]
+pub struct PackedBuffer<T, const W: u32, const H: u32, const N: usize> {
+    buf: [T; N],
+    area: Rectangle,
+}
 
-    let y_start = rect.top_left.y as u32;
-
-    let y_end = if let Some(br) = rect.bottom_right() {
-        br.y
-    } else {
-        // Rectangle is zero sized, so don't fill any of the buffer
-        return;
-    } as u32;
-
-    // Test constants, TODO: Make const generic
-    let w = 128;
-    let h = 64;
-
-    // 64px high display
-    let mut mask_buf = [0u8; 8];
-
-    let (chunk_start_idx, mask) = build_mask(&mut mask_buf, y_start, y_end);
-
-    let start_x = rect.top_left.x as u32;
-
-    let color = if color.is_on() { 0xff } else { 0x00 };
-
-    for x in start_x..(start_x + rect.size.width) {
-        for (chunk, mask) in mask.iter().enumerate() {
-            let offset = x as usize + ((chunk + chunk_start_idx) * w);
-
-            // dbg!(offset, chunk, mask);
-
-            let current = buf[offset];
-
-            buf[offset] = (current & !mask) | (color & mask)
+impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
+    pub const fn new() -> Self {
+        if N != (W * H / u8::BITS) as usize {
+            panic!()
         }
+
+        Self {
+            buf: [0x00u8; N],
+            area: Rectangle::new(Point::zero(), Size::new(W, H)),
+        }
+    }
+
+    /// Set an individual pixel.
+    ///
+    /// Any given pixels that are outside the display area will be ignored.
+    pub fn set_pixel(&mut self, point: Point, color: BinaryColor) {
+        let color = color as u8;
+
+        if !self.area.contains(point) {
+            return;
+        }
+
+        let Point { x, y } = point;
+
+        let idx = ((y as usize) / u8::BITS as usize * W as usize) + (x as usize);
+        let bit = y % u8::BITS as i32;
+
+        if let Some(byte) = self.buf.as_mut().get_mut(idx) {
+            // Set pixel value in byte
+            // Ref this comment https://stackoverflow.com/questions/47981/how-do-you-set-clear-and-toggle-a-single-bit#comment46654671_47990
+            *byte = *byte & !(1 << bit) | (color << bit)
+        }
+    }
+
+    /// Fill a packed buffer with the given color in the given area.
+    ///
+    /// The area must fit inside the buffer, i.e. no negative coordinates or coordinates too big to fit
+    /// into the (packed) buffer. Any out of bounds pixels will cause a panic.
+    fn fill_rect(&mut self, rect: &Rectangle, color: BinaryColor) {
+        let rect = rect.intersection(&self.area);
+
+        let y_start = rect.top_left.y as u32;
+
+        let y_end = if let Some(br) = rect.bottom_right() {
+            br.y
+        } else {
+            // Rectangle is zero sized, so don't fill any of the buffer
+            return;
+        } as u32;
+
+        let Size {
+            width: w,
+            height: h,
+        } = self.size();
+
+        let color = if color.is_on() { 0xff } else { 0x00 };
+
+        let mut mask_buf = [0u8; 8];
+
+        let (chunk_start_idx, mask) = build_mask(&mut mask_buf, y_start, y_end);
+
+        let start_x = rect.top_left.x as u32;
+
+        for x in start_x..(start_x + rect.size.width) {
+            for (chunk, mask) in mask.iter().enumerate() {
+                let offset = x as usize + ((chunk + chunk_start_idx) * W as usize);
+
+                if let Some(byte) = self.buf.as_mut().get_mut(offset) {
+                    *byte = (*byte & !mask) | (color & mask)
+                }
+            }
+        }
+    }
+}
+
+impl<T, const W: u32, const H: u32, const N: usize> OriginDimensions for PackedBuffer<T, W, H, N> {
+    fn size(&self) -> Size {
+        self.area.size
+    }
+}
+
+impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<u8, W, H, N> {
+    type Color = BinaryColor;
+    type Error = Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = embedded_graphics_core::Pixel<Self::Color>>,
+    {
+        let bb = self.bounding_box();
+
+        pixels
+            .into_iter()
+            .filter(|Pixel(pos, _color)| bb.contains(*pos))
+            .for_each(|Pixel(pos, color)| self.set_pixel(pos, color));
+
+        Ok(())
+    }
+
+    fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
+        self.fill_rect(area, color);
+
+        Ok(())
+    }
+
+    fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
+        match color {
+            BinaryColor::Off => self.buf.fill(0x00),
+            BinaryColor::On => self.buf.fill(0xff),
+        }
+
+        Ok(())
     }
 }
 
@@ -50,20 +141,6 @@ mod tests {
     use super::*;
     use embedded_graphics_core::prelude::{Point, PointsIter, Size};
     use rand::{thread_rng, Rng};
-
-    /// Fixed 128 px wide display.
-    fn set_pixel(buf: &mut [u8], x: u32, y: u32, value: bool) {
-        let value = value as u8;
-
-        let idx = ((y as usize) / 8 * 128 as usize) + (x as usize);
-        let bit = y % 8;
-
-        if let Some(byte) = buf.as_mut().get_mut(idx) {
-            // Set pixel value in byte
-            // Ref this comment https://stackoverflow.com/questions/47981/how-do-you-set-clear-and-toggle-a-single-bit#comment46654671_47990
-            *byte = *byte & !(1 << bit) | (value << bit)
-        }
-    }
 
     fn random_point() -> Point {
         let mut rng = thread_rng();
@@ -81,23 +158,22 @@ mod tests {
         // let mut bads = Vec::new();
 
         for i in 0..10_000 {
-            let mut display = [0x00u8; 128 * 8];
-            let mut display2 = [0x00u8; 128 * 8];
+            let mut disp_fill = PackedBuffer::<u8, 128, 64, 1024>::new();
+            let mut disp_pixels = PackedBuffer::<u8, 128, 64, 1024>::new();
 
             let tl = random_point();
             let br = random_point();
 
             let area = Rectangle::with_corners(tl, br);
 
-            let area = area.intersection(&disp_size);
-
-            fill_rect(&mut display, &area, BinaryColor::On);
-
+            // Fill pixel by pixel
             for point in area.points() {
-                set_pixel(&mut display2, point.x as u32, point.y as u32, true);
+                disp_pixels.set_pixel(point, BinaryColor::On);
             }
 
-            assert_eq!(display, display2, "{i}: {:?}", area);
+            disp_fill.fill_solid(&area, BinaryColor::On);
+
+            assert_eq!(disp_fill, disp_pixels, "{i}: {:?}", area);
         }
     }
 }
