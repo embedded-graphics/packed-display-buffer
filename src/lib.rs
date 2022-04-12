@@ -10,7 +10,7 @@ use embedded_graphics_core::{
     primitives::Rectangle,
     Pixel,
 };
-use mask::{Chunk, ShiftSource, StartChunk};
+use mask::StartChunk;
 
 mod mask;
 
@@ -83,7 +83,7 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
         let x_start = rect.top_left.x as usize;
 
         let rect_width = rect.size.width as usize;
-        let start_block = rect.top_left.y as usize / Chunk::BITS as usize;
+        let start_block = rect.top_left.y as usize / u8::BITS as usize;
 
         let color = if color.is_on() { 0xff } else { 0x00 };
 
@@ -95,7 +95,7 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
         let first_block_start_idx = start_block * display_width + x_start;
         let first_block_end_idx = first_block_start_idx + rect_width;
 
-        // Partial fill at top of area; need to merge with existing data
+        // If the area covers part of a block, merge the top row with existing data in the block
         self.buf[first_block_start_idx..first_block_end_idx]
             .iter_mut()
             .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
@@ -106,7 +106,7 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
         }
 
         // Number of full blocks to fill
-        let num_fill = (remaining / Chunk::BITS) as usize;
+        let num_fill = (remaining / u8::BITS) as usize;
         // Block underneath start block
         let fill_block_start_idx = first_block_start_idx + display_width;
         let fill_block_end_idx = fill_block_start_idx + (num_fill * display_width);
@@ -116,10 +116,10 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
         for start_x in (fill_block_start_idx..fill_block_end_idx).step_by(display_width) {
             let end_x = start_x + rect_width;
 
-            // Complete overwrite
-            self.buf[start_x..end_x].fill(Chunk::MAX);
+            // Completely overwrite any existing value
+            self.buf[start_x..end_x].fill(u8::MAX);
 
-            remaining -= Chunk::BITS;
+            remaining -= u8::BITS;
         }
 
         // Partially fill end chunk if there are any remaining bits
@@ -130,7 +130,7 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
             self.buf[final_block_start_idx..final_block_end_idx]
                 .iter_mut()
                 .for_each(|byte| {
-                    let mask = !(ShiftSource::MAX << remaining) as Chunk;
+                    let mask = !(i8::MAX << remaining) as u8;
 
                     // Merge with existing data
                     *byte = (*byte & !mask) | (color & mask)
