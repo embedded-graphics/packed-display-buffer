@@ -81,7 +81,7 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
             return;
         } as u32;
 
-        let start_block = rect.top_left.y as usize / u8::BITS as usize;
+        let mut block = rect.top_left.y as usize / u8::BITS as usize;
 
         let color = if color.is_on() { 0xff } else { 0x00 };
 
@@ -91,7 +91,7 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         } = mask::start_chunk(y_start, y_end);
 
         // If the area covers part of a block, merge the top row with existing data in the block
-        self.block_range(start_block, &rect)
+        self.block_range(block, &rect)
             .iter_mut()
             .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
 
@@ -100,28 +100,30 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
             return;
         }
 
-        // Number of full blocks to fill
-        let num_fill = (remaining / u8::BITS) as usize;
+        // Start filling blocks below the starting partial block
+        block += 1;
 
         // Completely fill middle blocks in the area. We don't need to do any bit twiddling here so
         // it can be optimised by just filling the slice
-        for start_x in (start_block + 1)..(start_block + 1 + num_fill) {
+        while remaining >= u8::BITS {
             // Completely overwrite any existing value
-            self.block_range(start_x, &rect).fill(u8::MAX);
+            self.block_range(block, &rect).fill(u8::MAX);
 
+            block += 1;
             remaining -= u8::BITS;
         }
 
         // Partially fill end chunk if there are any remaining bits
         if remaining > 0 {
-            self.block_range(start_block + (num_fill + 1), &rect)
-                .iter_mut()
-                .for_each(|byte| {
-                    let mask = !(i8::MAX << remaining) as u8;
+            // Fill block underneath last fully filled block
+            // block += 1;
 
-                    // Merge with existing data
-                    *byte = (*byte & !mask) | (color & mask)
-                });
+            self.block_range(block, &rect).iter_mut().for_each(|byte| {
+                let mask = !(i8::MAX << remaining) as u8;
+
+                // Merge with existing data
+                *byte = (*byte & !mask) | (color & mask)
+            });
         }
     }
 }
@@ -183,7 +185,7 @@ mod tests {
 
     #[test]
     fn fuzz() {
-        for i in 0..10_000 {
+        for i in 0..100_000 {
             let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
             let mut disp_pixels = PackedBuffer::<128, 64, 1024>::new();
 
