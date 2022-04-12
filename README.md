@@ -3,6 +3,10 @@
 Prototype state right now, but useful for displays like SH1106 and SSD1306 which use a single byte
 to encode 8 pixel on/off values.
 
+## TODO/ideas/wants
+
+- [ ] Add support for `fill_contiguous` as well as solid fills
+
 ## Test cases TODO
 
 - [ ] Display size
