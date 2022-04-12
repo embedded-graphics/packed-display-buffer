@@ -16,12 +16,12 @@ mod mask;
 
 // TODO: Remove `N` and calculate from W * H when const features allow us to do so.
 #[derive(Debug, PartialEq)]
-pub struct PackedBuffer<T, const W: u32, const H: u32, const N: usize> {
-    buf: [T; N],
+pub struct PackedBuffer<const W: u32, const H: u32, const N: usize> {
+    buf: [u8; N],
     area: Rectangle,
 }
 
-impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
+impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
     pub const fn new() -> Self {
         // FIXME: Remove this when we can do maths in const generics
         if N != (W * H / u8::BITS) as usize {
@@ -139,13 +139,13 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<u8, W, H, N> {
     }
 }
 
-impl<T, const W: u32, const H: u32, const N: usize> OriginDimensions for PackedBuffer<T, W, H, N> {
+impl<const W: u32, const H: u32, const N: usize> OriginDimensions for PackedBuffer<W, H, N> {
     fn size(&self) -> Size {
         self.area.size
     }
 }
 
-impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<u8, W, H, N> {
+impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, H, N> {
     type Color = BinaryColor;
     type Error = Infallible;
 
@@ -204,8 +204,8 @@ mod tests {
         // let mut bads = Vec::new();
 
         for i in 0..10_000 {
-            let mut disp_fill = PackedBuffer::<u8, 128, 64, 1024>::new();
-            let mut disp_pixels = PackedBuffer::<u8, 128, 64, 1024>::new();
+            let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
+            let mut disp_pixels = PackedBuffer::<128, 64, 1024>::new();
 
             let tl = random_point();
             let br = random_point();

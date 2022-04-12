@@ -25,8 +25,7 @@ fn mask(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{:?} - {:?}", case.top_left, case.bottom_right())),
             case,
             |b, fill_area| {
-                let mut buffer =
-                    PackedBuffer::<u8, 128, 64, { 128 * 64 / u8::BITS as usize }>::new();
+                let mut buffer = PackedBuffer::<128, 64, { 128 * 64 / u8::BITS as usize }>::new();
 
                 b.iter(|| buffer.fill_solid(fill_area, BinaryColor::On));
             },
