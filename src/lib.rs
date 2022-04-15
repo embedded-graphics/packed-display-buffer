@@ -1,6 +1,6 @@
 use embedded_graphics_core::{
     draw_target::DrawTarget,
-    geometry::{Dimensions, OriginDimensions, Point, Size},
+    geometry::{OriginDimensions, Point, Size},
     pixelcolor::BinaryColor,
     primitives::Rectangle,
     Pixel,
@@ -140,11 +140,9 @@ impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, 
     where
         I: IntoIterator<Item = embedded_graphics_core::Pixel<Self::Color>>,
     {
-        let bb = self.bounding_box();
-
+        // NOTE: Don't need to filter here as `set_pixel` already does bounds checking
         pixels
             .into_iter()
-            .filter(|Pixel(pos, _color)| bb.contains(*pos))
             .for_each(|Pixel(pos, color)| self.set_pixel(pos, color));
 
         Ok(())
@@ -169,8 +167,9 @@ impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use embedded_graphics_core::{geometry::Point, primitives::PointsIter};
+    use embedded_graphics_core::{geometry::Point, pixelcolor::Rgb565, primitives::PointsIter};
     use rand::{thread_rng, Rng};
+    use tinybmp::Bmp;
 
     fn random_point() -> Point {
         let mut rng = thread_rng();
@@ -182,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn fuzz() {
+    fn fuzz_fill() {
         for i in 0..100_000 {
             let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
             let mut disp_pixels = PackedBuffer::<128, 64, 1024>::new();
@@ -198,6 +197,39 @@ mod tests {
             }
 
             disp_fill.fill_solid(&area, BinaryColor::On).ok();
+
+            assert_eq!(disp_fill, disp_pixels, "{i}: {:?}", area);
+        }
+    }
+
+    #[test]
+    fn fuzz_contiguous() {
+        for i in 0..10_000 {
+            let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
+            let mut disp_pixels = PackedBuffer::<128, 64, 1024>::new();
+
+            let tl = {
+                let mut rng = thread_rng();
+
+                let x: i32 = rng.gen_range(-60..130);
+                let y: i32 = rng.gen_range(-30..70);
+
+                Point::new(x, y)
+            };
+
+            let bmp: Bmp<Rgb565> = Bmp::from_slice(include_bytes!("../benches/dvd.bmp"))
+                .expect("Failed to load BMP image");
+
+            let pixels = bmp.pixels().map(|p| (p.0, p.1.into()));
+
+            let area = Rectangle::new(tl, bmp.size());
+
+            // Fill pixel by pixel
+            for (point, color) in pixels.clone() {
+                disp_pixels.set_pixel(point + area.top_left, color);
+            }
+
+            disp_fill.fill_contiguous(&area, pixels.map(|p| p.1)).ok();
 
             assert_eq!(disp_fill, disp_pixels, "{i}: {:?}", area);
         }
