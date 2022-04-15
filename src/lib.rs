@@ -116,8 +116,6 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         // Partially fill end chunk if there are any remaining bits
         if remaining > 0 {
             // Fill block underneath last fully filled block
-            // block += 1;
-
             self.block_range(block, &rect).iter_mut().for_each(|byte| {
                 let mask = !(i8::MAX << remaining) as u8;
 
