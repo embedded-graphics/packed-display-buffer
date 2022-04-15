@@ -124,6 +124,45 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
             });
         }
     }
+
+    fn fill_rect_iter<I>(&mut self, rect: &Rectangle, colors: I)
+    where
+        I: IntoIterator<Item = BinaryColor>,
+    {
+        let mut colors = colors.into_iter();
+
+        let rect = rect.intersection(&self.area);
+
+        let y_start = rect.top_left.y as u32;
+
+        let y_end = if let Some(br) = rect.bottom_right() {
+            br.y
+        } else {
+            // Rectangle is zero sized, so don't fill any of the buffer
+            return;
+        } as u32;
+
+        // For partial block
+        // ---
+        // Count how many starting rows
+        // Create repeating iterator over starting block bytes
+        // Take W * starting rows pixels from `colors`
+        // Zip the two together with an index
+        // Calculate offset from start of byte
+        // Calculate bit index based on start offset + (index / W)
+        // Merge bits
+        // ---
+        // For full blocks
+        // ---
+        // For each block
+        // Create repeating iterator over block bytes
+        // Take W * u8::BITS pixels
+        // Zip the two with an index
+        // Calculate bit index based on (index / W)
+        // This shoudl work for the partial last block too
+
+        todo!();
+    }
 }
 
 impl<const W: u32, const H: u32, const N: usize> OriginDimensions for PackedBuffer<W, H, N> {
@@ -150,6 +189,15 @@ impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, 
 
     fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
         self.fill_rect(area, color);
+
+        Ok(())
+    }
+
+    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Self::Color>,
+    {
+        self.fill_rect_iter(area, colors);
 
         Ok(())
     }
