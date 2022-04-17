@@ -144,8 +144,33 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
 
         // For partial block
         // ---
+        let start_block = y_start / u8::BITS;
+        let start_block_bit_idx = y_start % u8::BITS;
         // Count how many starting rows
+        let starting_rows = u8::BITS - start_block_bit_idx;
+        // Number of bits to use in the starting partial block
+        let starting_bits = starting_rows * rect.size.width;
+
+        let start_block = self.block_range(start_block as usize, &rect);
+
+        let starting_pixels = colors.take(starting_bits as usize);
+
         // Create repeating iterator over starting block bytes
+        for (idx, color) in starting_pixels.enumerate() {
+            let byte = idx % rect.size.width as usize;
+
+            let bit = idx / rect.size.width as usize;
+            let bit = start_block_bit_idx as usize + bit;
+
+            let color = color as u8;
+
+            start_block[byte] = start_block[byte] & !(1 << bit) | (color << bit);
+        }
+
+        colors.for_each(|c| {
+            //
+        });
+
         // Take W * starting rows pixels from `colors`
         // Zip the two together with an index
         // Calculate offset from start of byte
@@ -159,9 +184,9 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         // Take W * u8::BITS pixels
         // Zip the two with an index
         // Calculate bit index based on (index / W)
-        // This shoudl work for the partial last block too
+        // This should work for the partial last block too
 
-        todo!();
+        // todo!();
     }
 }
 
@@ -248,6 +273,30 @@ mod tests {
 
             assert_eq!(disp_fill, disp_pixels, "{i}: {:?}", area);
         }
+    }
+
+    #[test]
+    fn contiguous_zero() {
+        let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
+        let mut disp_pixels = PackedBuffer::<128, 64, 1024>::new();
+
+        let tl = Point::zero();
+
+        let bmp: Bmp<Rgb565> = Bmp::from_slice(include_bytes!("../benches/dvd.bmp"))
+            .expect("Failed to load BMP image");
+
+        let pixels = bmp.pixels().map(|p| (p.0, p.1.into()));
+
+        let area = Rectangle::new(tl, bmp.size());
+
+        // Fill pixel by pixel
+        for (point, color) in pixels.clone() {
+            disp_pixels.set_pixel(point + area.top_left, color);
+        }
+
+        disp_fill.fill_contiguous(&area, pixels.map(|p| p.1)).ok();
+
+        assert_eq!(disp_fill, disp_pixels, "{:?}", area);
     }
 
     #[test]
