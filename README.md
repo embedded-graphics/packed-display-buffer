@@ -5,7 +5,7 @@ to encode 8 pixel on/off values.
 
 ## TODO/ideas/wants
 
-- [ ] Add support for `fill_contiguous` as well as solid fills
+- [x] Add support for `fill_contiguous` as well as solid fills
 
 ## Test cases TODO
 

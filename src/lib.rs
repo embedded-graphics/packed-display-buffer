@@ -35,22 +35,24 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
     ///
     /// Any given pixels that are outside the display area will be ignored.
     pub fn set_pixel(&mut self, point: Point, color: BinaryColor) {
-        let color = color as u8;
-
+        // Invariant: requires W * H == N / 8
         if !self.area.contains(point) {
             return;
         }
 
+        self.set_pixel_unchecked(point, color)
+    }
+
+    fn set_pixel_unchecked(&mut self, point: Point, color: BinaryColor) {
+        let color = color as u8;
         let Point { x, y } = point;
 
         let idx = ((y as usize) / u8::BITS as usize * W as usize) + (x as usize);
         let bit = y % u8::BITS as i32;
 
-        if let Some(byte) = self.buf.as_mut().get_mut(idx) {
-            // Set pixel value in byte
-            // Ref this comment https://stackoverflow.com/questions/47981/how-do-you-set-clear-and-toggle-a-single-bit#comment46654671_47990
-            *byte = *byte & !(1 << bit) | (color << bit)
-        }
+        let byte = &mut self.buf[idx];
+
+        *byte = *byte & !(1 << bit) | (color << bit)
     }
 
     /// Create a range representing the indices corresponding to the section of a block in the given
@@ -129,64 +131,46 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
     where
         I: IntoIterator<Item = BinaryColor>,
     {
-        let mut colors = colors.into_iter();
+        let intersection = rect.intersection(&self.area);
 
-        let rect = rect.intersection(&self.area);
-
-        let y_start = rect.top_left.y as u32;
-
-        let y_end = if let Some(br) = rect.bottom_right() {
-            br.y
-        } else {
-            // Rectangle is zero sized, so don't fill any of the buffer
+        // Don't draw anything if the entire rect lies outside the visible area
+        if intersection.is_zero_sized() {
             return;
-        } as u32;
-
-        // For partial block
-        // ---
-        let start_block = y_start / u8::BITS;
-        let start_block_bit_idx = y_start % u8::BITS;
-        // Count how many starting rows
-        let starting_rows = u8::BITS - start_block_bit_idx;
-        // Number of bits to use in the starting partial block
-        let starting_bits = starting_rows * rect.size.width;
-
-        let start_block = self.block_range(start_block as usize, &rect);
-
-        let starting_pixels = colors.take(starting_bits as usize);
-
-        // Create repeating iterator over starting block bytes
-        for (idx, color) in starting_pixels.enumerate() {
-            let byte = idx % rect.size.width as usize;
-
-            let bit = idx / rect.size.width as usize;
-            let bit = start_block_bit_idx as usize + bit;
-
-            let color = color as u8;
-
-            start_block[byte] = start_block[byte] & !(1 << bit) | (color << bit);
         }
 
-        colors.for_each(|c| {
-            //
-        });
+        // Number of rows above the visible area
+        let row_pre_skip = rect.top_left.y.min(0).abs() as u32;
 
-        // Take W * starting rows pixels from `colors`
-        // Zip the two together with an index
-        // Calculate offset from start of byte
-        // Calculate bit index based on start offset + (index / W)
-        // Merge bits
-        // ---
-        // For full blocks
-        // ---
-        // For each block
-        // Create repeating iterator over block bytes
-        // Take W * u8::BITS pixels
-        // Zip the two with an index
-        // Calculate bit index based on (index / W)
-        // This should work for the partial last block too
+        // Number of pixels above the visible area
+        let skip = row_pre_skip * rect.size.width;
 
-        // todo!();
+        // Take only the whole rows within the visible area. This will stop before rows below the
+        // visible area are encountered.
+        let take = intersection.size.height * rect.size.width;
+
+        let colors = colors
+            .into_iter()
+            .skip(skip as usize)
+            .take(take as usize)
+            .enumerate();
+
+        let x_range = 0..W as i32;
+
+        for (idx, color) in colors {
+            let idx = idx as u32;
+            let x = rect.top_left.x + (idx % rect.size.width) as i32;
+            let y = intersection.top_left.y + (idx / rect.size.width) as i32;
+
+            // We checked Y range before with .skip().take() on the iterator. We only need to check
+            // whether the X coordinate is within the visible area here.
+            if !x_range.contains(&x) {
+                continue;
+            }
+
+            let pos = Point::new(x, y);
+
+            self.set_pixel_unchecked(pos, color);
+        }
     }
 }
 
@@ -302,6 +286,7 @@ mod tests {
     #[test]
     fn fuzz_contiguous() {
         for i in 0..10_000 {
+            println!("---");
             let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
             let mut disp_pixels = PackedBuffer::<128, 64, 1024>::new();
 
@@ -330,5 +315,29 @@ mod tests {
 
             assert_eq!(disp_fill, disp_pixels, "{i}: {:?}", area);
         }
+    }
+
+    #[test]
+    fn bmp() {
+        let mut disp_fill = PackedBuffer::<32, 16, { 32 * 16 / 8 }>::new();
+        let mut disp_pixels = PackedBuffer::<32, 16, { 32 * 16 / 8 }>::new();
+
+        let tl = Point::new(-5, -5);
+
+        let bmp: Bmp<Rgb565> = Bmp::from_slice(include_bytes!("../benches/dvd.bmp"))
+            .expect("Failed to load BMP image");
+
+        let pixels = bmp.pixels().map(|p| (p.0, p.1.into()));
+
+        let area = Rectangle::new(tl, bmp.size());
+
+        // Fill pixel by pixel
+        for (point, color) in pixels.clone() {
+            disp_pixels.set_pixel(point + area.top_left, color);
+        }
+
+        disp_fill.fill_contiguous(&area, pixels.map(|p| p.1)).ok();
+
+        assert_eq!(disp_fill, disp_pixels, "{:?}", area);
     }
 }
