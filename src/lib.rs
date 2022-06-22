@@ -1,3 +1,6 @@
+#![no_std]
+
+use core::convert::Infallible;
 use embedded_graphics_core::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Point, Size},
@@ -6,7 +9,6 @@ use embedded_graphics_core::{
     Pixel,
 };
 use mask::StartChunk;
-use std::convert::Infallible;
 
 mod mask;
 
@@ -286,7 +288,6 @@ mod tests {
     #[test]
     fn fuzz_contiguous() {
         for i in 0..10_000 {
-            println!("---");
             let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
             let mut disp_pixels = PackedBuffer::<128, 64, 1024>::new();
 
