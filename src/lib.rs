@@ -176,6 +176,12 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
     }
 }
 
+impl<const W: u32, const H: u32, const N: usize> AsRef<[u8]> for PackedBuffer<W, H, N> {
+    fn as_ref(&self) -> &[u8] {
+        &self.buf
+    }
+}
+
 impl<const W: u32, const H: u32, const N: usize> OriginDimensions for PackedBuffer<W, H, N> {
     fn size(&self) -> Size {
         self.area.size
