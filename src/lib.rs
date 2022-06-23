@@ -1,5 +1,7 @@
 #![no_std]
 
+use active_area::ActiveArea;
+use block_iterator::BlockIterator;
 use core::convert::Infallible;
 use embedded_graphics_core::{
     draw_target::DrawTarget,
@@ -10,6 +12,8 @@ use embedded_graphics_core::{
 };
 use mask::StartChunk;
 
+mod active_area;
+mod block_iterator;
 mod mask;
 
 // TODO: Remove `N` and calculate from W * H when const features allow us to do so.
@@ -17,6 +21,7 @@ mod mask;
 pub struct PackedBuffer<const W: u32, const H: u32, const N: usize> {
     buf: [u8; N],
     area: Rectangle,
+    active_area: ActiveArea<W, H>,
 }
 
 impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
@@ -30,6 +35,7 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         Self {
             buf: [0x00u8; N],
             area: Rectangle::new(Point::zero(), Size::new(W, H)),
+            active_area: ActiveArea::new(),
         }
     }
 
@@ -42,7 +48,9 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
             return;
         }
 
-        self.set_pixel_unchecked(point, color)
+        self.set_pixel_unchecked(point, color);
+
+        self.active_area.update_from_point(point);
     }
 
     fn set_pixel_unchecked(&mut self, point: Point, color: BinaryColor) {
@@ -78,12 +86,16 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
 
         let y_start = rect.top_left.y as u32;
 
-        let y_end = if let Some(br) = rect.bottom_right() {
-            br.y
+        let br = if let Some(br) = rect.bottom_right() {
+            br
         } else {
             // Rectangle is zero sized, so don't fill any of the buffer
             return;
-        } as u32;
+        };
+
+        self.active_area.update_from_rect(rect);
+
+        let y_end = br.y as u32;
 
         let mut block = rect.top_left.y as usize / u8::BITS as usize;
 
@@ -140,6 +152,8 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
             return;
         }
 
+        self.active_area.update_from_rect(intersection);
+
         // Number of rows above the visible area
         let row_pre_skip = rect.top_left.y.min(0).abs() as u32;
 
@@ -172,6 +186,35 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
             let pos = Point::new(x, y);
 
             self.set_pixel_unchecked(pos, color);
+        }
+    }
+
+    pub fn clear_active_area(&mut self) {
+        self.active_area.clear();
+    }
+
+    pub fn active_blocks<'a>(&'a self) -> BlockIterator<'a> {
+        let active_area = self.active_area.rectangle();
+
+        let br = if let Some(br) = active_area.bottom_right() {
+            br
+        } else {
+            return BlockIterator::empty();
+        };
+
+        let start_block = active_area.top_left.y as u32 / 8;
+        let end_block = br.y as u32 / 8 + 1;
+
+        let start_idx = (start_block * W) + active_area.top_left.x as u32 - 1;
+        let block_width = active_area.size.width;
+
+        BlockIterator {
+            buffer: &self.buf,
+            step_by: W as usize - 1,
+            idx: start_idx as usize,
+            block_width: block_width as usize,
+            num_blocks: end_block - start_block,
+            block: 0,
         }
     }
 }
@@ -325,6 +368,35 @@ mod tests {
     }
 
     #[test]
+    fn active_area_fuzz_contiguous() {
+        for _ in 0..10_000 {
+            let mut disp_fill = PackedBuffer::<128, 64, 1024>::new();
+
+            let tl = {
+                let mut rng = thread_rng();
+
+                let x: i32 = rng.gen_range(-60..130);
+                let y: i32 = rng.gen_range(-30..70);
+
+                Point::new(x, y)
+            };
+
+            let bmp: Bmp<Rgb565> = Bmp::from_slice(include_bytes!("../benches/dvd.bmp"))
+                .expect("Failed to load BMP image");
+
+            let pixels = bmp.pixels().map(|p| (p.0, p.1.into()));
+
+            let area = Rectangle::new(tl, bmp.size());
+
+            let visible_image = Rectangle::new(Point::zero(), disp_fill.size()).intersection(&area);
+
+            disp_fill.fill_contiguous(&area, pixels.map(|p| p.1)).ok();
+
+            assert_eq!(disp_fill.active_area.rectangle(), visible_image);
+        }
+    }
+
+    #[test]
     fn bmp() {
         let mut disp_fill = PackedBuffer::<32, 16, { 32 * 16 / 8 }>::new();
         let mut disp_pixels = PackedBuffer::<32, 16, { 32 * 16 / 8 }>::new();
@@ -346,5 +418,27 @@ mod tests {
         disp_fill.fill_contiguous(&area, pixels.map(|p| p.1)).ok();
 
         assert_eq!(disp_fill, disp_pixels, "{:?}", area);
+    }
+
+    #[test]
+    fn active_area_blocks() {
+        let mut disp_fill = PackedBuffer::<128, 64, { 128 * 64 / 8 }>::new();
+
+        let tl = Point::new(2, 2);
+
+        let bmp: Bmp<Rgb565> = Bmp::from_slice(include_bytes!("../benches/dvd.bmp"))
+            .expect("Failed to load BMP image");
+
+        let pixels = bmp.pixels().map(|p| (p.0, p.1.into()));
+
+        let area = Rectangle::new(tl, bmp.size());
+
+        disp_fill.fill_contiguous(&area, pixels.map(|p| p.1)).ok();
+
+        assert_eq!(disp_fill.active_blocks().count(), 4);
+
+        for block in disp_fill.active_blocks() {
+            assert_eq!(block.len(), area.size.width as usize);
+        }
     }
 }
