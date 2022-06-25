@@ -6,7 +6,8 @@ to encode 8 pixel on/off values.
 ## TODO/ideas/wants
 
 - [x] Add support for `fill_contiguous` as well as solid fills
-- [ ] Add support for active area tracking so partial updates are possible
+- [x] Add support for active area tracking so partial updates are possible
+- [ ] Add support for 0/90/180/270º rotations
 
 ## Test cases TODO
 
