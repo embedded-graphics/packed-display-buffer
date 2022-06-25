@@ -35,6 +35,7 @@ impl<const W: u32, const H: u32> ActiveArea<W, H> {
         *self = Self::new()
     }
 
+    /// Return the rectangle containing the active area.
     pub fn rectangle(&self) -> Rectangle {
         if self.touched {
             Rectangle::with_corners(self.min, self.max)

@@ -193,6 +193,10 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         self.active_area.clear();
     }
 
+    pub fn active_area(&self) -> Rectangle {
+        self.active_area.rectangle()
+    }
+
     pub fn active_blocks<'a>(&'a self) -> BlockIterator<'a> {
         let active_area = self.active_area.rectangle();
 
@@ -205,12 +209,12 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         let start_block = active_area.top_left.y as u32 / 8;
         let end_block = br.y as u32 / 8 + 1;
 
-        let start_idx = (start_block * W) + active_area.top_left.x as u32 - 1;
+        let start_idx = (start_block * W) + active_area.top_left.x as u32;
         let block_width = active_area.size.width;
 
         BlockIterator {
             buffer: &self.buf,
-            step_by: W as usize - 1,
+            step_by: W as usize,
             idx: start_idx as usize,
             block_width: block_width as usize,
             num_blocks: end_block - start_block,
@@ -440,5 +444,27 @@ mod tests {
         for block in disp_fill.active_blocks() {
             assert_eq!(block.len(), area.size.width as usize);
         }
+    }
+
+    #[test]
+    fn block_offset() {
+        let mut disp = PackedBuffer::<132, 64, { 132 * 64 / 8 }>::new();
+
+        disp.set_pixel(Point::new(0, 0), BinaryColor::On);
+        disp.set_pixel(Point::new(0, 10), BinaryColor::On);
+        disp.set_pixel(Point::new(0, 16), BinaryColor::On);
+        disp.set_pixel(Point::new(0, 20), BinaryColor::On);
+
+        let mut blocks = disp.active_blocks();
+
+        let block1 = blocks.next().unwrap();
+        let block2 = blocks.next().unwrap();
+        let block3 = blocks.next().unwrap();
+
+        assert_eq!(blocks.next(), None);
+
+        assert_eq!(block1[0], 0b0000_0001);
+        assert_eq!(block2[0], 0b0000_0100);
+        assert_eq!(block3[0], 0b0001_0001);
     }
 }
