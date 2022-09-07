@@ -8,6 +8,7 @@ to encode 8 pixel on/off values.
 - [x] Add support for `fill_contiguous` as well as solid fills
 - [x] Add support for active area tracking so partial updates are possible
 - [ ] Add support for 0/90/180/270º rotations
+- [ ] Support bit depths > 1 and <= 8 for e.g. 2bpp 3 colour epaper displays
 
 ## Test cases TODO
 

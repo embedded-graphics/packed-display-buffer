@@ -11,10 +11,12 @@ use embedded_graphics_core::{
     Pixel,
 };
 use mask::StartChunk;
+use pixels::Pixels;
 
 mod active_area;
 mod block_iterator;
 mod mask;
+mod pixels;
 
 // TODO: Remove `N` and calculate from W * H when const features allow us to do so.
 #[derive(Debug, PartialEq)]
@@ -63,6 +65,10 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         let byte = &mut self.buf[idx];
 
         *byte = *byte & !(1 << bit) | (color << bit)
+    }
+
+    pub fn pixels<'a>(&'a self) -> Pixels<'a> {
+        Pixels::new(self)
     }
 
     /// Create a range representing the indices corresponding to the section of a block in the given
@@ -279,6 +285,10 @@ impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use embedded_graphics::{
+        primitives::{Circle, Primitive, PrimitiveStyle},
+        Drawable,
+    };
     use embedded_graphics_core::{geometry::Point, pixelcolor::Rgb565, primitives::PointsIter};
     use rand::{thread_rng, Rng};
     use tinybmp::Bmp;
