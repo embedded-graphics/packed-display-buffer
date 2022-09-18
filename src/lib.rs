@@ -175,14 +175,14 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
 
         self.active_area.update_from_rect(intersection);
 
-        // Number of rows above the visible area
+        // Number of lines above the visible area
         let row_pre_skip = rect.top_left.y.min(0).abs() as u32;
 
         // Number of pixels above the visible area
         let skip = row_pre_skip * rect.size.width;
 
-        // Take only the whole rows within the visible area. This will stop before rows below the
-        // visible area are encountered.
+        // Take only the whole rows within the visible area. This filters out rows below the visible
+        // area
         let take = intersection.size.height * rect.size.width;
 
         let colors = colors
@@ -218,6 +218,26 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         self.active_area.rectangle()
     }
 
+    /// Get an iterator over blocks in the active area of the display buffer.
+    ///
+    /// Example:
+    ///
+    /// ```text
+    /// Display buffer════════════════════════════════╗
+    /// ║                                             ║
+    /// ║                                             ║
+    /// ║         Active area══════════════╗          ║
+    /// ║ .next() ║◀────────&[u8]─────────▶║          ║
+    /// ║ .next() ║◀────────&[u8]─────────▶║          ║
+    /// ║ .next() ║◀────────&[u8]─────────▶║          ║
+    /// ║ .next() ║◀────────&[u8]─────────▶║          ║
+    /// ║         ╚════════════════════════╝          ║
+    /// ║                                             ║
+    /// ╚═════════════════════════════════════════════╝
+    /// ```
+    ///
+    /// This method can be useful for efficiently transferring contiguous parts of the display
+    /// buffer to the display hardware.
     pub fn active_blocks<'a>(&'a self) -> BlockIterator<'a> {
         let active_area = self.active_area.rectangle();
 
@@ -235,11 +255,11 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
 
         BlockIterator {
             buffer: &self.buf,
-            step_by: W as usize,
-            idx: start_idx as usize,
+            display_width: W as usize,
+            buffer_idx: start_idx as usize,
             block_width: block_width as usize,
             num_blocks: end_block - start_block,
-            block: 0,
+            current_block: 0,
         }
     }
 }
