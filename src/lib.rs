@@ -73,6 +73,21 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
 
     /// Create a range representing the indices corresponding to the section of a block in the given
     /// area.
+    ///
+    /// I.e., the `◀═════════════▶` section– in the diagram below:
+    ///
+    /// ```text
+    ///    Block
+    ///         │ Display════════════════════════════╗
+    ///       1 │ ║       Area────────────┐          ║
+    ///       2 │ ║       │               │          ║
+    ///     * 3 │ ║───────┼◀═════════════▶┼──────────║
+    ///       4 │ ║       │               │          ║
+    ///       5 │ ║       │               │          ║
+    ///       6 │ ║       └───────────────┘          ║
+    ///       7 │ ║                                  ║
+    ///         │ ╚══════════════════════════════════╝
+    /// ```
     fn block_range(&mut self, block_idx: usize, rect: &Rectangle) -> &mut [u8] {
         let rect_width = rect.size.width as usize;
         let start_x = rect.top_left.x as usize;

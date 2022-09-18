@@ -8,8 +8,42 @@ pub(crate) struct StartChunk {
 
 /// Create the bit mask for the partially filled starting block.
 ///
-/// This is required if the top Y coordinate of the block doesn't start at a multiple of
-/// `u8::BITS`.
+/// This is required if the top Y coordinate of the block doesn't start at a multiple of `u8::BITS`.
+///
+/// Example:
+///
+/// ```text
+/// Bit
+///   0   Block 0════════════════════════╗
+///   1   ║                              ║
+///   2   ║                              ║
+///   3   ║                              ║
+///   4   ║        *****************     ║
+///   5   ║        *****************     ║
+///   6   ║        *****************     ║
+///   7   ║        *****************     ║
+///   0   Block 1══.................═════╣
+///   1   ║        .................     ║
+///   2   ║        .................     ║
+///   3   ║        .................     ║
+///   4   ║        .................     ║
+///   5   ║        .................     ║
+///   6   ║        .................     ║
+///   7   ║        .................     ║
+///   0   Block 2══.................═════╣
+///   1   ║        .................     ║
+///   2   ║        .................     ║
+///   3   ║                              ║
+///   4   ║                              ║
+///   5   ║                              ║
+///   6   ║                              ║
+///   7   ╚══════════════════════════════╝
+/// ```
+///
+/// Given the area above that starts at y = 4 and ends at y = 15, the first 4 bits of the area
+/// inhabit part of an 8 bit block, denoted with `*`. `start_chunk` computes the bit mask for these
+/// first 4 bits as `0b00001111`, as well as returning the remaining number of rows in the block. In
+/// this case, 11.
 pub(crate) fn start_chunk(start: u32, end: u32) -> StartChunk {
     let len = end - start;
     let num_bits = u8::BITS;
