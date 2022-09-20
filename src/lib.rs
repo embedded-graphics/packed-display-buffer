@@ -1,12 +1,12 @@
-#![no_std]
+// #![no_std]
 
 use active_area::ActiveArea;
 use block_iterator::BlockIterator;
-use core::convert::Infallible;
+use core::{convert::Infallible, marker::PhantomData};
 use embedded_graphics_core::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Point, Size},
-    pixelcolor::BinaryColor,
+    pixelcolor::{raw::RawData, BinaryColor, PixelColor},
     primitives::Rectangle,
     Pixel,
 };
@@ -15,18 +15,26 @@ use embedded_graphics_core::{
 
 mod active_area;
 mod block_iterator;
+mod byte_direction;
 // mod mask;
 // mod pixels;
 
 // TODO: Remove `N` and calculate from W * H when const features allow us to do so.
 #[derive(Debug, PartialEq)]
-pub struct PackedBuffer<const W: u32, const H: u32, const N: usize> {
+pub struct PackedBuffer<const W: u32, const H: u32, const N: usize, C> {
     buf: [u8; N],
     area: Rectangle,
     active_area: ActiveArea<W, H>,
+    _color: PhantomData<C>,
 }
 
-impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
+impl<const W: u32, const H: u32, const N: usize, C> PackedBuffer<W, H, N, C>
+where
+    C: PixelColor,
+    // TODO: Replace with `C::Raw::Storage = u8` or whatever when
+    // <https://github.com/rust-lang/rust/issues/20041> is done.
+    <<C as PixelColor>::Raw as RawData>::Storage: Into<u8>,
+{
     pub const fn new() -> Self {
         // TODO: Remove this when we can do maths in const generics
         // FIXME: What if H is not a multiple of 8 high?
@@ -34,10 +42,16 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
             panic!("Invariant error: W * H != N")
         }
 
+        assert!(
+            C::Raw::BITS_PER_PIXEL <= 8,
+            "Only pixel formats with <=8bpp are currently supported"
+        );
+
         Self {
             buf: [0x00u8; N],
             area: Rectangle::new(Point::zero(), Size::new(W, H)),
             active_area: ActiveArea::new(),
+            _color: PhantomData,
         }
     }
 
@@ -104,18 +118,18 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
     /// The area is clipped to the display dimensions. In conjunction with the `W * H = N` assertion
     /// in [`new`] guarantees that no out of bounds writes can occur.
     fn fill_rect(&mut self, rect: &Rectangle, color: BinaryColor) {
-        // let rect = rect.intersection(&self.area);
+        let rect = rect.intersection(&self.area);
 
-        // let y_start = rect.top_left.y as u32;
+        let y_start = rect.top_left.y as u32;
 
-        // let br = if let Some(br) = rect.bottom_right() {
-        //     br
-        // } else {
-        //     // Rectangle is zero sized, so don't fill any of the buffer
-        //     return;
-        // };
+        let br = if let Some(br) = rect.bottom_right() {
+            br
+        } else {
+            // Rectangle is zero sized, so don't fill any of the buffer
+            return;
+        };
 
-        // self.active_area.update_from_rect(rect);
+        self.active_area.update_from_rect(rect);
 
         // let y_end = br.y as u32;
 
@@ -268,19 +282,23 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
     }
 }
 
-impl<const W: u32, const H: u32, const N: usize> AsRef<[u8]> for PackedBuffer<W, H, N> {
+impl<const W: u32, const H: u32, const N: usize, C> AsRef<[u8]> for PackedBuffer<W, H, N, C> {
     fn as_ref(&self) -> &[u8] {
         &self.buf
     }
 }
 
-impl<const W: u32, const H: u32, const N: usize> OriginDimensions for PackedBuffer<W, H, N> {
+impl<const W: u32, const H: u32, const N: usize, C> OriginDimensions for PackedBuffer<W, H, N, C> {
     fn size(&self) -> Size {
         self.area.size
     }
 }
 
-impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, H, N> {
+impl<const W: u32, const H: u32, const N: usize, C> DrawTarget for PackedBuffer<W, H, N, C>
+where
+    C: PixelColor,
+    <<C as PixelColor>::Raw as RawData>::Storage: Into<u8>,
+{
     type Color = BinaryColor;
     type Error = Infallible;
 
@@ -321,7 +339,8 @@ impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, 
     // }
 }
 
-#[cfg(test)]
+// #[cfg(test)]
+#[cfg(feature = "DELETEME")]
 mod tests {
     use super::*;
     use embedded_graphics::{
