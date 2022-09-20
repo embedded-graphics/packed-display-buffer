@@ -10,13 +10,13 @@ use embedded_graphics_core::{
     primitives::Rectangle,
     Pixel,
 };
-use mask::StartChunk;
-use pixels::Pixels;
+// use mask::StartChunk;
+// use pixels::Pixels;
 
 mod active_area;
 mod block_iterator;
-mod mask;
-mod pixels;
+// mod mask;
+// mod pixels;
 
 // TODO: Remove `N` and calculate from W * H when const features allow us to do so.
 #[derive(Debug, PartialEq)]
@@ -67,9 +67,10 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
         *byte = *byte & !(1 << bit) | (color << bit)
     }
 
-    pub fn pixels<'a>(&'a self) -> Pixels<'a> {
-        Pixels::new(self)
-    }
+    // TODO
+    // pub fn pixels<'a>(&'a self) -> Pixels<'a> {
+    //     Pixels::new(self)
+    // }
 
     /// Create a range representing the indices corresponding to the section of a block in the given
     /// area.
@@ -103,111 +104,114 @@ impl<const W: u32, const H: u32, const N: usize> PackedBuffer<W, H, N> {
     /// The area is clipped to the display dimensions. In conjunction with the `W * H = N` assertion
     /// in [`new`] guarantees that no out of bounds writes can occur.
     fn fill_rect(&mut self, rect: &Rectangle, color: BinaryColor) {
-        let rect = rect.intersection(&self.area);
+        // let rect = rect.intersection(&self.area);
 
-        let y_start = rect.top_left.y as u32;
+        // let y_start = rect.top_left.y as u32;
 
-        let br = if let Some(br) = rect.bottom_right() {
-            br
-        } else {
-            // Rectangle is zero sized, so don't fill any of the buffer
-            return;
-        };
+        // let br = if let Some(br) = rect.bottom_right() {
+        //     br
+        // } else {
+        //     // Rectangle is zero sized, so don't fill any of the buffer
+        //     return;
+        // };
 
-        self.active_area.update_from_rect(rect);
+        // self.active_area.update_from_rect(rect);
 
-        let y_end = br.y as u32;
+        // let y_end = br.y as u32;
 
-        let mut block = rect.top_left.y as usize / u8::BITS as usize;
+        // let mut block = rect.top_left.y as usize / u8::BITS as usize;
 
-        let color = if color.is_on() { 0xff } else { 0x00 };
+        // let color = if color.is_on() { 0xff } else { 0x00 };
 
-        let StartChunk {
-            mask: first_mask,
-            mut remaining,
-        } = mask::start_chunk(y_start, y_end);
+        // let StartChunk {
+        //     mask: first_mask,
+        //     mut remaining,
+        // } = mask::start_chunk(y_start, y_end);
 
-        // If the area covers part of a block, merge the top row with existing data in the block
-        self.block_range(block, &rect)
-            .iter_mut()
-            .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
+        // // If the area covers part of a block, merge the top row with existing data in the block
+        // self.block_range(block, &rect)
+        //     .iter_mut()
+        //     .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
 
-        // If fill rectangle fits entirely within first block, there's nothing more to do
-        if remaining == 0 {
-            return;
-        }
+        // // If fill rectangle fits entirely within first block, there's nothing more to do
+        // if remaining == 0 {
+        //     return;
+        // }
 
-        // Start filling blocks below the starting partial block
-        block += 1;
+        // // Start filling blocks below the starting partial block
+        // block += 1;
 
-        // Completely fill middle blocks in the area. We don't need to do any bit twiddling here so
-        // it can be optimised by just filling the slice
-        while remaining >= u8::BITS {
-            // Completely overwrite any existing value
-            self.block_range(block, &rect).fill(u8::MAX);
+        // // Completely fill middle blocks in the area. We don't need to do any bit twiddling here so
+        // // it can be optimised by just filling the slice
+        // while remaining >= u8::BITS {
+        //     // Completely overwrite any existing value
+        //     self.block_range(block, &rect).fill(u8::MAX);
 
-            block += 1;
-            remaining -= u8::BITS;
-        }
+        //     block += 1;
+        //     remaining -= u8::BITS;
+        // }
 
-        // Partially fill end block if there are any remaining bits
-        if remaining > 0 {
-            // Merge block underneath last fully filled block with current data
-            self.block_range(block, &rect).iter_mut().for_each(|byte| {
-                let mask = !(i8::MAX << remaining) as u8;
+        // // Partially fill end block if there are any remaining bits
+        // if remaining > 0 {
+        //     // Merge block underneath last fully filled block with current data
+        //     self.block_range(block, &rect).iter_mut().for_each(|byte| {
+        //         let mask = !(i8::MAX << remaining) as u8;
 
-                // Merge with existing data
-                *byte = (*byte & !mask) | (color & mask)
-            });
-        }
+        //         // Merge with existing data
+        //         *byte = (*byte & !mask) | (color & mask)
+        //     });
+        // }
+        todo!()
     }
 
+    /// Contiguous fill.
     fn fill_rect_iter<I>(&mut self, rect: &Rectangle, colors: I)
     where
         I: IntoIterator<Item = BinaryColor>,
     {
-        let intersection = rect.intersection(&self.area);
+        // let intersection = rect.intersection(&self.area);
 
-        // Don't draw anything if the entire rect lies outside the visible area
-        if intersection.is_zero_sized() {
-            return;
-        }
+        // // Don't draw anything if the entire rect lies outside the visible area
+        // if intersection.is_zero_sized() {
+        //     return;
+        // }
 
-        self.active_area.update_from_rect(intersection);
+        // self.active_area.update_from_rect(intersection);
 
-        // Number of lines above the visible area
-        let row_pre_skip = rect.top_left.y.min(0).abs() as u32;
+        // // Number of lines above the visible area
+        // let row_pre_skip = rect.top_left.y.min(0).abs() as u32;
 
-        // Number of pixels above the visible area
-        let skip = row_pre_skip * rect.size.width;
+        // // Number of pixels above the visible area
+        // let skip = row_pre_skip * rect.size.width;
 
-        // Take only the whole rows within the visible area. This filters out rows below the visible
-        // area
-        let take = intersection.size.height * rect.size.width;
+        // // Take only the whole rows within the visible area. This filters out rows below the visible
+        // // area
+        // let take = intersection.size.height * rect.size.width;
 
-        let colors = colors
-            .into_iter()
-            .skip(skip as usize)
-            .take(take as usize)
-            .enumerate();
+        // let colors = colors
+        //     .into_iter()
+        //     .skip(skip as usize)
+        //     .take(take as usize)
+        //     .enumerate();
 
-        let x_range = 0..W as i32;
+        // let x_range = 0..W as i32;
 
-        for (idx, color) in colors {
-            let idx = idx as u32;
-            let x = rect.top_left.x + (idx % rect.size.width) as i32;
-            let y = intersection.top_left.y + (idx / rect.size.width) as i32;
+        // for (idx, color) in colors {
+        //     let idx = idx as u32;
+        //     let x = rect.top_left.x + (idx % rect.size.width) as i32;
+        //     let y = intersection.top_left.y + (idx / rect.size.width) as i32;
 
-            // We checked Y range before with .skip().take() on the iterator. We only need to check
-            // whether the X coordinate is within the visible area here.
-            if !x_range.contains(&x) {
-                continue;
-            }
+        //     // We checked Y range before with .skip().take() on the iterator. We only need to check
+        //     // whether the X coordinate is within the visible area here.
+        //     if !x_range.contains(&x) {
+        //         continue;
+        //     }
 
-            let pos = Point::new(x, y);
+        //     let pos = Point::new(x, y);
 
-            self.set_pixel_unchecked(pos, color);
-        }
+        //     self.set_pixel_unchecked(pos, color);
+        // }
+        todo!()
     }
 
     pub fn clear_active_area(&mut self) {
@@ -292,29 +296,29 @@ impl<const W: u32, const H: u32, const N: usize> DrawTarget for PackedBuffer<W, 
         Ok(())
     }
 
-    fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
-        self.fill_rect(area, color);
+    // fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
+    //     self.fill_rect(area, color);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Self::Color>,
-    {
-        self.fill_rect_iter(area, colors);
+    // fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
+    // where
+    //     I: IntoIterator<Item = Self::Color>,
+    // {
+    //     self.fill_rect_iter(area, colors);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
-        match color {
-            BinaryColor::Off => self.buf.fill(0x00),
-            BinaryColor::On => self.buf.fill(0xff),
-        }
+    // fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
+    //     match color {
+    //         BinaryColor::Off => self.buf.fill(0x00),
+    //         BinaryColor::On => self.buf.fill(0xff),
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
 
 #[cfg(test)]
