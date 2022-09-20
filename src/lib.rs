@@ -6,17 +6,18 @@ use core::{convert::Infallible, marker::PhantomData};
 use embedded_graphics_core::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Point, Size},
-    pixelcolor::{raw::RawData, BinaryColor, PixelColor},
+    pixelcolor::{raw::RawData, BinaryColor, IntoStorage, PixelColor},
     primitives::Rectangle,
     Pixel,
 };
+use mask::StartChunk;
 // use mask::StartChunk;
 // use pixels::Pixels;
 
 mod active_area;
 mod block_iterator;
 mod byte_direction;
-// mod mask;
+mod mask;
 // mod pixels;
 
 // TODO: Remove `N` and calculate from W * H when const features allow us to do so.
@@ -30,10 +31,7 @@ pub struct PackedBuffer<const W: u32, const H: u32, const N: usize, C> {
 
 impl<const W: u32, const H: u32, const N: usize, C> PackedBuffer<W, H, N, C>
 where
-    C: PixelColor,
-    // TODO: Replace with `C::Raw::Storage = u8` or whatever when
-    // <https://github.com/rust-lang/rust/issues/20041> is done.
-    <<C as PixelColor>::Raw as RawData>::Storage: Into<u8>,
+    C: PixelColor + IntoStorage<Storage = u8>,
 {
     pub const fn new() -> Self {
         // TODO: Remove this when we can do maths in const generics
@@ -117,7 +115,23 @@ where
     ///
     /// The area is clipped to the display dimensions. In conjunction with the `W * H = N` assertion
     /// in [`new`] guarantees that no out of bounds writes can occur.
-    fn fill_rect(&mut self, rect: &Rectangle, color: BinaryColor) {
+    fn fill_rect(&mut self, rect: &Rectangle, color: C) {
+        let color: u8 = color.into_storage();
+
+        // Repeat color throughout the byte
+        let color = match C::Raw::BITS_PER_PIXEL {
+            1 => {
+                if color > 0 {
+                    0xff
+                } else {
+                    0x00
+                }
+            }
+            2 => color | color << 2 | color << 4 | color << 6,
+            4 => color | color << 4,
+            8 => color,
+        };
+
         let rect = rect.intersection(&self.area);
 
         let y_start = rect.top_left.y as u32;
@@ -131,51 +145,48 @@ where
 
         self.active_area.update_from_rect(rect);
 
-        // let y_end = br.y as u32;
+        let y_end = br.y as u32;
 
-        // let mut block = rect.top_left.y as usize / u8::BITS as usize;
+        let mut block = rect.top_left.y as usize / u8::BITS as usize;
 
-        // let color = if color.is_on() { 0xff } else { 0x00 };
+        let StartChunk {
+            mask: first_mask,
+            mut remaining,
+        } = mask::start_chunk(y_start, y_end);
 
-        // let StartChunk {
-        //     mask: first_mask,
-        //     mut remaining,
-        // } = mask::start_chunk(y_start, y_end);
+        // If the area covers part of a block, merge the top row with existing data in the block
+        self.block_range(block, &rect)
+            .iter_mut()
+            .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
 
-        // // If the area covers part of a block, merge the top row with existing data in the block
-        // self.block_range(block, &rect)
-        //     .iter_mut()
-        //     .for_each(|byte| *byte = (*byte & !first_mask) | (color & first_mask));
+        // If fill rectangle fits entirely within first block, there's nothing more to do
+        if remaining == 0 {
+            return;
+        }
 
-        // // If fill rectangle fits entirely within first block, there's nothing more to do
-        // if remaining == 0 {
-        //     return;
-        // }
+        // Start filling blocks below the starting partial block
+        block += 1;
 
-        // // Start filling blocks below the starting partial block
-        // block += 1;
+        // Completely fill middle blocks in the area. We don't need to do any bit twiddling here so
+        // it can be optimised by just filling the slice
+        while remaining >= u8::BITS {
+            // Completely overwrite any existing value
+            self.block_range(block, &rect).fill(u8::MAX);
 
-        // // Completely fill middle blocks in the area. We don't need to do any bit twiddling here so
-        // // it can be optimised by just filling the slice
-        // while remaining >= u8::BITS {
-        //     // Completely overwrite any existing value
-        //     self.block_range(block, &rect).fill(u8::MAX);
+            block += 1;
+            remaining -= u8::BITS;
+        }
 
-        //     block += 1;
-        //     remaining -= u8::BITS;
-        // }
+        // Partially fill end block if there are any remaining bits
+        if remaining > 0 {
+            // Merge block underneath last fully filled block with current data
+            self.block_range(block, &rect).iter_mut().for_each(|byte| {
+                let mask = !(i8::MAX << remaining) as u8;
 
-        // // Partially fill end block if there are any remaining bits
-        // if remaining > 0 {
-        //     // Merge block underneath last fully filled block with current data
-        //     self.block_range(block, &rect).iter_mut().for_each(|byte| {
-        //         let mask = !(i8::MAX << remaining) as u8;
-
-        //         // Merge with existing data
-        //         *byte = (*byte & !mask) | (color & mask)
-        //     });
-        // }
-        todo!()
+                // Merge with existing data
+                *byte = (*byte & !mask) | (color & mask)
+            });
+        }
     }
 
     /// Contiguous fill.
